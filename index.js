@@ -18,8 +18,27 @@ class Logger extends Writable {
     }
 
     _write(chunk, encoding, callback) {
+        let time;
+
+        if (chunk && chunk.value) {
+            time = new Date(chunk.value.time).toISOString().substr(0, 19).replace(/T/, ' ');
+        }
+
+        if (chunk && chunk.value && chunk.value.src === 'connection' && chunk.value.host && chunk.value.port) {
+            if (!this.prevConn || this.prevConn.cid !== chunk.value.cid) {
+                this.prevConn = chunk.value;
+                // show connection header
+                console.log(`${clc.bold(`${chunk.value.cid}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}`);
+            }
+
+            console.log(
+                `${clc.xterm(8)(
+                    `[${time}] Connection established to ${chunk.value.host}:${chunk.value.port} (${chunk.value.secure ? chunk.value.version : 'no tls'})`
+                )}`
+            );
+        }
+
         if (chunk && chunk.value && chunk.value.src && chunk.value.data) {
-            let time = new Date(chunk.value.time).toISOString().substr(0, 19).replace(/T/, ' ');
             let prefix = `[${time}] ${chunk.value.src.toUpperCase().trim()}: `;
             let pad = val => {
                 val = val
@@ -34,7 +53,7 @@ class Logger extends Writable {
             if (!this.prevConn || this.prevConn.cid !== chunk.value.cid) {
                 this.prevConn = chunk.value;
                 // show connection header
-                console.log(`${clc.bold(`${chunk.value.account} ${chunk.value.cid}`)}`);
+                console.log(`${clc.bold(`${chunk.value.cid}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}`);
             }
 
             console.log(`${clc.xterm(8)(prefix)}${pad(Buffer.from(chunk.value.data, 'base64').toString())}`);
