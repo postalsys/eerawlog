@@ -42,6 +42,14 @@ class Logger extends Writable {
                 time = new Date(chunk.value.time || Date.now()).toISOString().substr(0, 19).replace(/T/, ' ');
             }
 
+            if (chunk.value && chunk.value.action === 'onPreHandler' && /^\/v1\//.test(chunk.value.path)) {
+                console.log(
+                    `${clc.xterm(8)(`[${time}] H:`)} ${clc.xterm(13)(
+                        `${chunk.value.method.toUpperCase()} ${chunk.value.path}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`
+                    )}`
+                );
+            }
+
             if (chunk && chunk.value && chunk.value.src === 'connection' && chunk.value.host && chunk.value.port) {
                 if (!this.prevConn || this.prevConn.cid !== chunk.value.cid) {
                     this.prevConn = chunk.value;
