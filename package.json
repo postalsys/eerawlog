@@ -1,0 +1,24 @@
+{
+    "name": "eerawlog",
+    "version": "1.0.0",
+    "description": "EmailEngine raw log viewer",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "bin": {
+        "eerawlog": "bin/eerawlog.js"
+    },
+    "keywords": [
+        "emailengine",
+        "logs"
+    ],
+    "author": "Andris Reinman",
+    "license": "ISC",
+    "dependencies": {
+        "cli-color": "2.0.0",
+        "fast-json-parse": "1.0.3",
+        "pump": "3.0.0",
+        "split2": "3.2.2"
+    }
+}
