@@ -83,7 +83,27 @@ class Logger extends Writable {
 
                 console.log(
                     `${clc.xterm(8)(
-                        `[${time}] Connection established to ${chunk.value.host}:${chunk.value.port} (${chunk.value.secure ? chunk.value.version : 'no tls'})`
+                        `[${time}] Connection established to ${chunk.value.host}:${chunk.value.port} (${
+                            chunk.value.secure
+                                ? `${chunk.value.version} / ${chunk.value.algo}, ${chunk.value.authorized ? 'valid' : 'invalid'} certificate`
+                                : 'no tls'
+                        })`
+                    )}`
+                );
+            }
+
+            if (chunk && chunk.value && chunk.value.src === 'tls' && chunk.value.algo && chunk.value.version) {
+                if (!this.prevConn || this.prevConn.cid !== chunk.value.cid) {
+                    this.prevConn = chunk.value;
+                    // show connection header
+                    console.log(`${clc.bold(`${chunk.value.cid}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}`);
+                }
+
+                console.log(
+                    `${clc.xterm(8)(
+                        `[${time}] TLS Session established using ${chunk.value.version} / ${chunk.value.algo}, ${
+                            chunk.value.authorized ? 'valid' : 'invalid'
+                        } certificate`
                     )}`
                 );
             }
