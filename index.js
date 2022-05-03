@@ -4,6 +4,9 @@ const pump = require('pump');
 const split = require('split2');
 const { Writable } = require('stream');
 const clc = require('cli-color');
+const argv = require('minimist')(process.argv.slice(2));
+
+const filter = Object.assign({}, (typeof argv.filter === 'object' && !Array.isArray(argv.filter) && argv.filter) || {});
 
 function Parse(data) {
     if (!(this instanceof Parse)) {
@@ -42,6 +45,27 @@ class Logger extends Writable {
                 time = new Date(chunk.value.time || Date.now()).toISOString().substr(0, 19).replace(/T/, ' ');
             }
 
+            if (chunk && chunk.value) {
+                for (let key of Object.keys(filter)) {
+                    let hasMatch = false;
+                    for (let val of [].concat(filter[key] || [])) {
+                        if (typeof chunk.value[key] === 'number' && !isNaN(val)) {
+                            val = Number(val);
+                        } else if (typeof chunk.value[key] === 'string') {
+                            val = val.toString();
+                        }
+
+                        if (chunk.value[key] === val) {
+                            hasMatch = true;
+                        }
+                    }
+                    if (!hasMatch) {
+                        // does not match filter
+                        return;
+                    }
+                }
+            }
+
             if (chunk.value && chunk.value.action === 'onPreHandler' && /^\/v1\//.test(chunk.value.path)) {
                 console.log(
                     `${clc.xterm(8)(`[${time}] H:`)} ${clc.xterm(13)(
@@ -65,7 +89,7 @@ class Logger extends Writable {
             }
 
             if (chunk && chunk.value && chunk.value.src && chunk.value.data) {
-                let prefix = `[${time}] ${chunk.value.src.toUpperCase().trim()}: `;
+                let prefix = `[${time}] ${chunk.value.src.toUpperCase().trim()}: [${chunk.value.secure ? 'S' : ' '}${chunk.value.compress ? 'C' : ' '}] `;
                 let pad = val => {
                     val = val
                         .replace(/\r/g, '')
