@@ -57,6 +57,9 @@ class Logger extends Writable {
 
                         if (chunk.value[key] === val) {
                             hasMatch = true;
+                        } else if (key === 'account' && chunk.value.component === 'api' && chunk.value.req?.url?.indexOf(`/${filter[key]}/`) >= 0) {
+                            hasMatch = true;
+                            chunk.value.account = chunk.value.account || filter[key];
                         }
                     }
                     if (!hasMatch) {
@@ -70,6 +73,16 @@ class Logger extends Writable {
                 console.log(
                     `${clc.xterm(8)(`[${time}] H:`)} ${clc.xterm(13)(
                         `${chunk.value.method.toUpperCase()} ${chunk.value.path}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`
+                    )}`
+                );
+            }
+
+            if (chunk && chunk.value && chunk.value.component === 'api' && chunk.value.req && chunk.value.res && chunk.value.msg) {
+                console.log(
+                    `${clc.xterm(11)(
+                        `[${time}] API${clc.bold(`${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}: ${chunk.value.req?.method.toUpperCase()} ${
+                            chunk.value.req?.url
+                        } ${chunk.value.res?.statusCode} (${chunk.value.responseTime}ms)`
                     )}`
                 );
             }
