@@ -87,6 +87,49 @@ class Logger extends Writable {
                 );
             }
 
+            if (chunk && chunk.value && chunk.value.action === 'renewAccessToken') {
+                let prefix = `[${time}] `;
+
+                let pad = val => {
+                    val =
+                        ' '.repeat(prefix.length) +
+                        val
+                            .replace(/\r/g, '')
+                            .replace(/\n$/, '')
+                            .replace(/\n/g, `\n${' '.repeat(prefix.length)}`);
+
+                    let col = chunk.value.error ? 9 : 11;
+
+                    return clc.xterm(col)(val);
+                };
+
+                console.log(
+                    `${clc.xterm(chunk.value.error ? 9 : 11)(
+                        `${prefix}OAuth2${clc.bold(`${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}: ${chunk.value.msg}${
+                            chunk.value.flag?.message ? `: ${chunk.value.flag?.message}` : ''
+                        }`
+                    )}`
+                );
+
+                if (chunk.value.expires) {
+                    console.log(pad(`Expires on ${chunk.value.expires}`));
+                }
+
+                if (chunk.value.scopes) {
+                    console.log(`${pad(`Provisioned scopes:\n- ` + chunk.value.scopes.join('\n- '))}`);
+                }
+
+                if (chunk.value.response?.error) {
+                    console.log(
+                        pad(
+                            Object.keys(chunk.value.response)
+                                .map(key => `${key}: ${chunk.value.response[key]}`)
+                                .join('\n')
+                        )
+                    );
+                }
+            }
+
             if (chunk && chunk.value && chunk.value.src === 'connection' && chunk.value.host && chunk.value.port) {
                 if (!this.prevConn || this.prevConn.cid !== chunk.value.cid) {
                     this.prevConn = chunk.value;
