@@ -4,14 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const clc = require('cli-color');
 
 const BIN = path.join(__dirname, '..', 'bin', 'eerawlog.js');
-
-// Strip ANSI SGR escape sequences (cli-color uses xterm-256 + bold/reset).
-function stripAnsi(str) {
-    // eslint-disable-next-line no-control-regex
-    return str.replace(/\x1B\[[0-9;]*m/g, '');
-}
 
 function runCli(input, args = []) {
     return new Promise((resolve, reject) => {
@@ -26,7 +21,7 @@ function runCli(input, args = []) {
         child.stderr.on('data', d => (stderr += d));
         child.on('error', reject);
         child.on('close', code => {
-            resolve({ code, stdout: stripAnsi(stdout), stderr: stripAnsi(stderr) });
+            resolve({ code, stdout: clc.strip(stdout), stderr: clc.strip(stderr) });
         });
         child.stdin.end(input);
     });
@@ -245,4 +240,36 @@ test('filter.account back-fills account from API req.url path segment', async ()
         ['--filter.account=myacc']
     );
     assert.match(stdout, /API \[myacc\]: GET \/v1\/account\/myacc\/messages 200 \(7ms\)/);
+});
+
+test('filter.account back-fill works when multiple --filter.account values are passed', async () => {
+    const input =
+        line({
+            time: FIXED_MS,
+            component: 'api',
+            msg: 'r',
+            req: { method: 'get', url: '/v1/account/alpha/messages' },
+            res: { statusCode: 200 },
+            responseTime: 1
+        }) +
+        line({
+            time: FIXED_MS,
+            component: 'api',
+            msg: 'r',
+            req: { method: 'get', url: '/v1/account/beta/messages' },
+            res: { statusCode: 200 },
+            responseTime: 2
+        }) +
+        line({
+            time: FIXED_MS,
+            component: 'api',
+            msg: 'r',
+            req: { method: 'get', url: '/v1/account/gamma/messages' },
+            res: { statusCode: 200 },
+            responseTime: 3
+        });
+    const { stdout } = await runCli(input, ['--filter.account=alpha', '--filter.account=beta']);
+    assert.match(stdout, /API \[alpha\]: GET \/v1\/account\/alpha\/messages/);
+    assert.match(stdout, /API \[beta\]: GET \/v1\/account\/beta\/messages/);
+    assert.doesNotMatch(stdout, /gamma/);
 });

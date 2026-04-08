@@ -7,6 +7,19 @@ const clc = require('cli-color');
 const argv = require('minimist')(process.argv.slice(2));
 
 const filter = Object.assign({}, (typeof argv.filter === 'object' && !Array.isArray(argv.filter) && argv.filter) || {});
+const filterKeys = Object.keys(filter);
+
+const V1_PATH_RE = /^\/v1\//;
+const CR_RE = /\r/g;
+const TRAILING_LF_RE = /\n$/;
+const LF_RE = /\n/g;
+
+const GREY = clc.xterm(8);
+const RED = clc.xterm(9);
+const YELLOW = clc.xterm(11);
+const MAGENTA = clc.xterm(13);
+const SERVER = clc.xterm(39);
+const CLIENT = clc.xterm(119);
 
 function Parse(data) {
     if (!(this instanceof Parse)) {
@@ -22,167 +35,130 @@ function Parse(data) {
     }
 }
 
+function accountTag(account) {
+    return account ? ` [${account}]` : '';
+}
+
+// Re-indent a multi-line string so continuation lines align under the prefix.
+function padMultiline(text, indent) {
+    return text.replace(CR_RE, '').replace(TRAILING_LF_RE, '').replace(LF_RE, `\n${indent}`);
+}
+
 class Logger extends Writable {
-    constructor(opts) {
-        opts = opts || {};
-
-        super({
-            objectMode: true
-        });
-
+    constructor() {
+        super({ objectMode: true });
         this.prevConn = false;
+    }
+
+    // Print a bold connection header the first time we see a new cid so
+    // multi-line raw dumps stay grouped under the connection they belong to.
+    _printConnHeader(value) {
+        if (this.prevConn && this.prevConn.cid === value.cid) {
+            return;
+        }
+        this.prevConn = value;
+        console.log(clc.bold(`${value.cid}${accountTag(value.account)}`));
     }
 
     _write(chunk, encoding, callback) {
         try {
-            let time;
-
-            if (chunk && chunk.err && chunk.input) {
-                console.log(clc.xterm(11)(chunk.input));
+            if (chunk.err && chunk.input) {
+                console.log(YELLOW(chunk.input));
             }
 
-            if (chunk && chunk.value) {
-                time = new Date(chunk.value.time || Date.now()).toISOString().substr(0, 19).replace(/T/, ' ');
+            if (!chunk.value) {
+                return;
             }
 
-            if (chunk && chunk.value) {
-                for (let key of Object.keys(filter)) {
-                    let hasMatch = false;
-                    for (let val of [].concat(filter[key] || [])) {
-                        if (typeof chunk.value[key] === 'number' && !isNaN(val)) {
-                            val = Number(val);
-                        } else if (typeof chunk.value[key] === 'string') {
-                            val = val.toString();
-                        }
+            const value = chunk.value;
+            const time = new Date(value.time || Date.now()).toISOString().slice(0, 19).replace('T', ' ');
 
-                        if (chunk.value[key] === val) {
-                            hasMatch = true;
-                        } else if (key === 'account' && chunk.value.component === 'api' && chunk.value.req?.url?.indexOf(`/${filter[key]}/`) >= 0) {
-                            hasMatch = true;
-                            chunk.value.account = chunk.value.account || filter[key];
-                        }
+            for (const key of filterKeys) {
+                let hasMatch = false;
+                for (let val of [].concat(filter[key] || [])) {
+                    if (typeof value[key] === 'number' && !isNaN(val)) {
+                        val = Number(val);
+                    } else if (typeof value[key] === 'string') {
+                        val = val.toString();
                     }
-                    if (!hasMatch) {
-                        // does not match filter
-                        return;
+
+                    if (value[key] === val) {
+                        hasMatch = true;
+                    } else if (key === 'account' && value.component === 'api' && value.req?.url?.includes(`/${val}/`)) {
+                        hasMatch = true;
+                        value.account = value.account || val;
                     }
                 }
+                if (!hasMatch) {
+                    return;
+                }
             }
 
-            if (chunk.value && chunk.value.action === 'onPreHandler' && /^\/v1\//.test(chunk.value.path)) {
+            if (value.action === 'onPreHandler' && V1_PATH_RE.test(value.path)) {
+                console.log(`${GREY(`[${time}] H:`)} ${MAGENTA(`${value.method.toUpperCase()} ${value.path}${accountTag(value.account)}`)}`);
+            }
+
+            if (value.component === 'api' && value.req && value.res && value.msg) {
                 console.log(
-                    `${clc.xterm(8)(`[${time}] H:`)} ${clc.xterm(13)(
-                        `${chunk.value.method.toUpperCase()} ${chunk.value.path}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`
-                    )}`
+                    YELLOW(
+                        `[${time}] API${clc.bold(accountTag(value.account))}: ${value.req.method.toUpperCase()} ${value.req.url} ${value.res.statusCode} (${value.responseTime}ms)`
+                    )
                 );
             }
 
-            if (chunk && chunk.value && chunk.value.component === 'api' && chunk.value.req && chunk.value.res && chunk.value.msg) {
-                console.log(
-                    `${clc.xterm(11)(
-                        `[${time}] API${clc.bold(`${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}: ${chunk.value.req?.method.toUpperCase()} ${
-                            chunk.value.req?.url
-                        } ${chunk.value.res?.statusCode} (${chunk.value.responseTime}ms)`
-                    )}`
-                );
-            }
-
-            if (chunk && chunk.value && chunk.value.action === 'renewAccessToken') {
-                let prefix = `[${time}] `;
-
-                let pad = val => {
-                    val =
-                        ' '.repeat(prefix.length) +
-                        val
-                            .replace(/\r/g, '')
-                            .replace(/\n$/, '')
-                            .replace(/\n/g, `\n${' '.repeat(prefix.length)}`);
-
-                    let col = chunk.value.error ? 9 : 11;
-
-                    return clc.xterm(col)(val);
-                };
+            if (value.action === 'renewAccessToken') {
+                const prefix = `[${time}] `;
+                const indent = ' '.repeat(prefix.length);
+                const color = value.error ? RED : YELLOW;
+                const pad = text => color(indent + padMultiline(text, indent));
 
                 console.log(
-                    `${clc.xterm(chunk.value.error ? 9 : 11)(
-                        `${prefix}OAuth2${clc.bold(`${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}: ${chunk.value.msg}${
-                            chunk.value.flag?.message ? `: ${chunk.value.flag?.message}` : ''
-                        }`
-                    )}`
+                    color(`${prefix}OAuth2${clc.bold(accountTag(value.account))}: ${value.msg}${value.flag?.message ? `: ${value.flag.message}` : ''}`)
                 );
 
-                if (chunk.value.expires) {
-                    console.log(pad(`Expires on ${chunk.value.expires}`));
+                if (value.expires) {
+                    console.log(pad(`Expires on ${value.expires}`));
                 }
 
-                if (chunk.value.scopes) {
-                    console.log(`${pad(`Provisioned scopes:\n- ` + chunk.value.scopes.join('\n- '))}`);
+                if (value.scopes) {
+                    console.log(pad('Provisioned scopes:\n- ' + value.scopes.join('\n- ')));
                 }
 
-                if (chunk.value.response?.error) {
+                if (value.response?.error) {
                     console.log(
                         pad(
-                            Object.keys(chunk.value.response)
-                                .map(key => `${key}: ${chunk.value.response[key]}`)
+                            Object.keys(value.response)
+                                .map(k => `${k}: ${value.response[k]}`)
                                 .join('\n')
                         )
                     );
                 }
             }
 
-            if (chunk && chunk.value && chunk.value.src === 'connection' && chunk.value.host && chunk.value.port) {
-                if (!this.prevConn || this.prevConn.cid !== chunk.value.cid) {
-                    this.prevConn = chunk.value;
-                    // show connection header
-                    console.log(`${clc.bold(`${chunk.value.cid}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}`);
-                }
-
+            if (value.src === 'connection' && value.host && value.port) {
+                this._printConnHeader(value);
                 console.log(
-                    `${clc.xterm(8)(
-                        `[${time}] Connection established to ${chunk.value.host}:${chunk.value.port} (${
-                            chunk.value.secure
-                                ? `${chunk.value.version} / ${chunk.value.algo}, ${chunk.value.authorized ? 'valid' : 'invalid'} certificate`
-                                : 'no tls'
+                    GREY(
+                        `[${time}] Connection established to ${value.host}:${value.port} (${
+                            value.secure ? `${value.version} / ${value.algo}, ${value.authorized ? 'valid' : 'invalid'} certificate` : 'no tls'
                         })`
-                    )}`
+                    )
                 );
             }
 
-            if (chunk && chunk.value && chunk.value.src === 'tls' && chunk.value.algo && chunk.value.version) {
-                if (!this.prevConn || this.prevConn.cid !== chunk.value.cid) {
-                    this.prevConn = chunk.value;
-                    // show connection header
-                    console.log(`${clc.bold(`${chunk.value.cid}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}`);
-                }
-
+            if (value.src === 'tls' && value.algo && value.version) {
+                this._printConnHeader(value);
                 console.log(
-                    `${clc.xterm(8)(
-                        `[${time}] TLS Session established using ${chunk.value.version} / ${chunk.value.algo}, ${
-                            chunk.value.authorized ? 'valid' : 'invalid'
-                        } certificate`
-                    )}`
+                    GREY(`[${time}] TLS Session established using ${value.version} / ${value.algo}, ${value.authorized ? 'valid' : 'invalid'} certificate`)
                 );
             }
 
-            if (chunk && chunk.value && chunk.value.src && chunk.value.data) {
-                let prefix = `[${time}] ${chunk.value.src.toUpperCase().trim()}: [${chunk.value.secure ? 'S' : ' '}${chunk.value.compress ? 'C' : ' '}] `;
-                let pad = val => {
-                    val = val
-                        .replace(/\r/g, '')
-                        .replace(/\n$/, '')
-                        .replace(/\n/g, `\n${' '.repeat(prefix.length)}`);
-
-                    let col = chunk.value.src === 's' ? 39 : 119;
-
-                    return clc.xterm(col)(val);
-                };
-                if (!this.prevConn || this.prevConn.cid !== chunk.value.cid) {
-                    this.prevConn = chunk.value;
-                    // show connection header
-                    console.log(`${clc.bold(`${chunk.value.cid}${chunk.value.account ? ` [${chunk.value.account}]` : ''}`)}`);
-                }
-
-                console.log(`${clc.xterm(8)(prefix)}${pad(Buffer.from(chunk.value.data, 'base64').toString())}`);
+            if (value.src && value.data) {
+                const prefix = `[${time}] ${value.src.toUpperCase().trim()}: [${value.secure ? 'S' : ' '}${value.compress ? 'C' : ' '}] `;
+                const indent = ' '.repeat(prefix.length);
+                const color = value.src === 's' ? SERVER : CLIENT;
+                this._printConnHeader(value);
+                console.log(`${GREY(prefix)}${color(padMultiline(Buffer.from(value.data, 'base64').toString(), indent))}`);
             }
         } catch (err) {
             console.error(err);
@@ -192,12 +168,12 @@ class Logger extends Writable {
     }
 
     _final(callback) {
-        console.log(clc.xterm(8)(`input stream ended`));
+        console.log(GREY('input stream ended'));
         callback();
     }
 }
 
-pump(process.stdin, split(Parse), new Logger({}));
+pump(process.stdin, split(Parse), new Logger());
 process.on('SIGINT', function () {
     process.exit(0);
 });
