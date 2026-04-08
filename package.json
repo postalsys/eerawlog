@@ -10,6 +10,10 @@
     "bin": {
         "eerawlog": "bin/eerawlog.js"
     },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/postalsys/eerawlog.git"
+    },
     "keywords": [
         "emailengine",
         "logs"
