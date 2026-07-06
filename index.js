@@ -6,8 +6,14 @@ const { Writable } = require('stream');
 const clc = require('cli-color');
 const argv = require('minimist')(process.argv.slice(2));
 
-const filter = Object.assign({}, (typeof argv.filter === 'object' && !Array.isArray(argv.filter) && argv.filter) || {});
+const filter = (typeof argv.filter === 'object' && !Array.isArray(argv.filter) && argv.filter) || {};
 const filterKeys = Object.keys(filter);
+// Normalize each filter value (scalar or array) to an array once, so the
+// per-line matcher does not re-allocate on every key of every log line.
+const filterValues = {};
+for (const key of filterKeys) {
+    filterValues[key] = [].concat(filter[key] || []);
+}
 
 const V1_PATH_RE = /^\/v1\//;
 const CR_RE = /\r/g;
@@ -22,16 +28,10 @@ const SERVER = clc.xterm(39);
 const CLIENT = clc.xterm(119);
 
 function Parse(data) {
-    if (!(this instanceof Parse)) {
-        return new Parse(data);
-    }
-    this.err = null;
-    this.value = null;
     try {
-        this.value = JSON.parse(data);
+        return { err: null, value: JSON.parse(data) };
     } catch (err) {
-        this.err = err;
-        this.input = data;
+        return { err, value: null, input: data };
     }
 }
 
@@ -47,16 +47,16 @@ function padMultiline(text, indent) {
 class Logger extends Writable {
     constructor() {
         super({ objectMode: true });
-        this.prevConn = false;
+        this.prevCid = null;
     }
 
     // Print a bold connection header the first time we see a new cid so
     // multi-line raw dumps stay grouped under the connection they belong to.
     _printConnHeader(value) {
-        if (this.prevConn && this.prevConn.cid === value.cid) {
+        if (this.prevCid === value.cid) {
             return;
         }
-        this.prevConn = value;
+        this.prevCid = value.cid;
         console.log(clc.bold(`${value.cid}${accountTag(value.account)}`));
     }
 
@@ -71,11 +71,10 @@ class Logger extends Writable {
             }
 
             const value = chunk.value;
-            const time = new Date(value.time || Date.now()).toISOString().slice(0, 19).replace('T', ' ');
 
             for (const key of filterKeys) {
                 let hasMatch = false;
-                for (let val of [].concat(filter[key] || [])) {
+                for (let val of filterValues[key]) {
                     if (typeof value[key] === 'number' && !isNaN(val)) {
                         val = Number(val);
                     } else if (typeof value[key] === 'string') {
@@ -93,6 +92,8 @@ class Logger extends Writable {
                     return;
                 }
             }
+
+            const time = new Date(value.time || Date.now()).toISOString().slice(0, 19).replace('T', ' ');
 
             if (value.action === 'onPreHandler' && V1_PATH_RE.test(value.path)) {
                 console.log(`${GREY(`[${time}] H:`)} ${MAGENTA(`${value.method.toUpperCase()} ${value.path}${accountTag(value.account)}`)}`);
