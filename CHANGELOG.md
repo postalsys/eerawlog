@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.4](https://github.com/postalsys/eerawlog/compare/v1.5.3...v1.5.4) (2026-07-06)
+
+
+### Bug Fixes
+
+* neutralize terminal escape sequences in printed log data ([523f3fa](https://github.com/postalsys/eerawlog/commit/523f3fa74ad57818d250b0b1fdc64b8f4be1aea4))
+
 ## [1.5.3](https://github.com/postalsys/eerawlog/compare/v1.5.2...v1.5.3) (2026-04-08)
 
 
