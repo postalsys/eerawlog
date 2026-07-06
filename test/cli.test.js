@@ -201,6 +201,23 @@ test('groups multiple raw lines under a single connection header per cid', async
     assert.match(stdout, /B1 NOOP/);
 });
 
+test('neutralizes terminal escape sequences embedded in decoded raw socket data', async () => {
+    // A malicious IMAP server could embed an OSC 52 clipboard-write escape (ESC ] 52 ... BEL)
+    // in its raw bytes; base64-decoded, these must not reach the operator's terminal verbatim.
+    const payload = 'A1 OK\x1b]52;c;ZXZpbA\x07 done\r\n';
+    const { stdout } = await runCli(
+        line({
+            time: FIXED_MS,
+            src: 's',
+            cid: 'conn-esc',
+            data: Buffer.from(payload).toString('base64')
+        })
+    );
+    // Control bytes are rendered as inert caret notation (ESC -> ^[, BEL -> ^G), not emitted raw.
+    assert.match(stdout, /A1 OK\^\[\]52;c;ZXZpbA\^G done/);
+    assert.doesNotMatch(stdout, /\x1b\]52/);
+});
+
 test('filter.account drops non-matching entries (AND-across-keys, OR-within-key)', async () => {
     const input =
         line({

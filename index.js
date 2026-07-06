@@ -19,6 +19,9 @@ const V1_PATH_RE = /^\/v1\//;
 const CR_RE = /\r/g;
 const TRAILING_LF_RE = /\n$/;
 const LF_RE = /\n/g;
+// C0 controls (except tab and LF), DEL, and C1 controls — the bytes that carry
+// terminal escape/OSC sequences. CR is included so it can't reposition the cursor.
+const CONTROL_RE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
 
 const GREY = clc.xterm(8);
 const RED = clc.xterm(9);
@@ -35,13 +38,25 @@ function Parse(data) {
     }
 }
 
-function accountTag(account) {
-    return account ? ` [${account}]` : '';
+// Render control bytes in a visible, inert form so untrusted log data — above all
+// the base64-decoded raw IMAP traffic from a remote server — cannot smuggle terminal
+// escape/OSC control sequences onto the operator's terminal. C0 codes become caret
+// notation (ESC -> ^[); DEL and C1 codes become \xNN. Tab and LF are left intact.
+function sanitize(text) {
+    return String(text).replace(CONTROL_RE, ch => {
+        const code = ch.charCodeAt(0);
+        return code < 0x20 ? '^' + String.fromCharCode(code + 0x40) : '\\x' + code.toString(16).padStart(2, '0');
+    });
 }
 
-// Re-indent a multi-line string so continuation lines align under the prefix.
+function accountTag(account) {
+    return account ? ` [${sanitize(account)}]` : '';
+}
+
+// Strip CR, drop the trailing LF, neutralize control bytes, then re-indent
+// continuation lines so they align under the prefix.
 function padMultiline(text, indent) {
-    return text.replace(CR_RE, '').replace(TRAILING_LF_RE, '').replace(LF_RE, `\n${indent}`);
+    return sanitize(text.replace(CR_RE, '').replace(TRAILING_LF_RE, '')).replace(LF_RE, `\n${indent}`);
 }
 
 class Logger extends Writable {
@@ -57,13 +72,13 @@ class Logger extends Writable {
             return;
         }
         this.prevCid = value.cid;
-        console.log(clc.bold(`${value.cid}${accountTag(value.account)}`));
+        console.log(clc.bold(`${sanitize(value.cid)}${accountTag(value.account)}`));
     }
 
     _write(chunk, encoding, callback) {
         try {
             if (chunk.err && chunk.input) {
-                console.log(YELLOW(chunk.input));
+                console.log(YELLOW(sanitize(chunk.input)));
             }
 
             if (!chunk.value) {
@@ -96,13 +111,13 @@ class Logger extends Writable {
             const time = new Date(value.time || Date.now()).toISOString().slice(0, 19).replace('T', ' ');
 
             if (value.action === 'onPreHandler' && V1_PATH_RE.test(value.path)) {
-                console.log(`${GREY(`[${time}] H:`)} ${MAGENTA(`${value.method.toUpperCase()} ${value.path}${accountTag(value.account)}`)}`);
+                console.log(`${GREY(`[${time}] H:`)} ${MAGENTA(`${value.method.toUpperCase()} ${sanitize(value.path)}${accountTag(value.account)}`)}`);
             }
 
             if (value.component === 'api' && value.req && value.res && value.msg) {
                 console.log(
                     YELLOW(
-                        `[${time}] API${clc.bold(accountTag(value.account))}: ${value.req.method.toUpperCase()} ${value.req.url} ${value.res.statusCode} (${value.responseTime}ms)`
+                        `[${time}] API${clc.bold(accountTag(value.account))}: ${value.req.method.toUpperCase()} ${sanitize(value.req.url)} ${value.res.statusCode} (${value.responseTime}ms)`
                     )
                 );
             }
@@ -114,7 +129,9 @@ class Logger extends Writable {
                 const pad = text => color(indent + padMultiline(text, indent));
 
                 console.log(
-                    color(`${prefix}OAuth2${clc.bold(accountTag(value.account))}: ${value.msg}${value.flag?.message ? `: ${value.flag.message}` : ''}`)
+                    color(
+                        `${prefix}OAuth2${clc.bold(accountTag(value.account))}: ${sanitize(value.msg)}${value.flag?.message ? `: ${sanitize(value.flag.message)}` : ''}`
+                    )
                 );
 
                 if (value.expires) {
@@ -140,8 +157,10 @@ class Logger extends Writable {
                 this._printConnHeader(value);
                 console.log(
                     GREY(
-                        `[${time}] Connection established to ${value.host}:${value.port} (${
-                            value.secure ? `${value.version} / ${value.algo}, ${value.authorized ? 'valid' : 'invalid'} certificate` : 'no tls'
+                        `[${time}] Connection established to ${sanitize(value.host)}:${value.port} (${
+                            value.secure
+                                ? `${sanitize(value.version)} / ${sanitize(value.algo)}, ${value.authorized ? 'valid' : 'invalid'} certificate`
+                                : 'no tls'
                         })`
                     )
                 );
@@ -150,12 +169,16 @@ class Logger extends Writable {
             if (value.src === 'tls' && value.algo && value.version) {
                 this._printConnHeader(value);
                 console.log(
-                    GREY(`[${time}] TLS Session established using ${value.version} / ${value.algo}, ${value.authorized ? 'valid' : 'invalid'} certificate`)
+                    GREY(
+                        `[${time}] TLS Session established using ${sanitize(value.version)} / ${sanitize(value.algo)}, ${
+                            value.authorized ? 'valid' : 'invalid'
+                        } certificate`
+                    )
                 );
             }
 
             if (value.src && value.data) {
-                const prefix = `[${time}] ${value.src.toUpperCase().trim()}: [${value.secure ? 'S' : ' '}${value.compress ? 'C' : ' '}] `;
+                const prefix = `[${time}] ${sanitize(value.src).toUpperCase().trim()}: [${value.secure ? 'S' : ' '}${value.compress ? 'C' : ' '}] `;
                 const indent = ' '.repeat(prefix.length);
                 const color = value.src === 's' ? SERVER : CLIENT;
                 this._printConnHeader(value);
