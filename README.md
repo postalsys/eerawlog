@@ -1,22 +1,44 @@
 # Raw log viewer for EmailEngine
 
-[EmailEngine](https://emailengine.app/) logs all output in Pino format. If `EENGINE_LOG_RAW=true` environment variable or `--log.raw=true` argument is set then EmailEngine also includes raw data sent to and read from the IMAP socket. This utility displays these logs in human readable form.
+[EmailEngine](https://emailengine.app/) logs all output in Pino format. If the `EENGINE_LOG_RAW=true` environment variable or the `--log.raw=true` argument is set, then EmailEngine also includes the raw data sent to and read from the IMAP socket. This utility reads those logs from standard input and displays them in a human readable, color-coded form.
+
+## Install
+
+Requires Node.js 20 or later.
 
 ```
 $ npm install eerawlog -g
 $ EENGINE_LOG_RAW=true emailengine | eerawlog
 ```
 
-### Filtering output
+## What it shows
 
-You can filter by the keys listed in log entries by adding a cli argument `--filter.[key]="value"`. If you want to include multiple values, set the same keyword multiple times.
+eerawlog reads EmailEngine's NDJSON log lines from stdin and pretty-prints the entries it recognizes; unrecognized entries are ignored, while lines that are not valid JSON are echoed as-is so nothing in the stream is silently lost. Recognized entries are:
 
-**Example.** Only display IMAP traffic from accounts `"account1"` and `"account2"`
+- Raw IMAP socket traffic, decoded and color-coded by direction (client → server and server → client) and grouped under the connection it belongs to
+- IMAP connection and TLS session establishment
+- Incoming API requests (route handler entries and request-completion lines)
+- OAuth2 access-token renewals, including provisioned scopes and error details
+
+## Filtering output
+
+Filter by any key present in the log entries with a `--filter.<key>=<value>` argument:
+
+- Repeat the same key to match **any** of several values (OR).
+- Combine different keys to require **all** of them to match (AND).
+
+**Example.** Only display traffic for accounts `"account1"` and `"account2"`:
 
 ```
 $ EENGINE_LOG_RAW=true emailengine | eerawlog --filter.account="account1" --filter.account="account2"
 ```
 
-### Example screenshot
+When filtering by `account`, API log entries are also matched by the account segment in their request URL, even if the entry itself has no `account` field.
+
+## Example screenshot
 
 ![](https://cldup.com/0z5i7LU-_A.png)
+
+## License
+
+Licensed under the **ISC** license.
