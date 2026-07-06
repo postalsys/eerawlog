@@ -1,6 +1,6 @@
 {
     "name": "eerawlog",
-    "version": "1.5.3",
+    "version": "1.5.4",
     "description": "EmailEngine raw log viewer",
     "main": "index.js",
     "scripts": {
