@@ -1,9 +1,0 @@
-name: "eerawlog CodeQL config"
-
-# Exclude code that is not part of the published CLI runtime from analysis.
-# The test files intentionally feed malformed and hostile log input to exercise
-# edge cases that are not representative of production usage, so they generate
-# only false-positive noise.
-paths-ignore:
-    - test
-    - '**/test/**'
