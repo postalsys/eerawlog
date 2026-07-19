@@ -6,6 +6,11 @@ const { Writable } = require('stream');
 const clc = require('cli-color');
 const argv = require('minimist')(process.argv.slice(2));
 
+// --no-time hides the "[YYYY-MM-DD HH:MM:SS]" prefixes, --no-cid hides the
+// bold connection header lines (useful for screenshots and documentation)
+const showTime = argv.time !== false;
+const showCid = argv.cid !== false;
+
 const filter = (typeof argv.filter === 'object' && !Array.isArray(argv.filter) && argv.filter) || {};
 const filterKeys = Object.keys(filter);
 // Normalize each filter value (scalar or array) to an array once, so the
@@ -68,7 +73,7 @@ class Logger extends Writable {
     // Print a bold connection header the first time we see a new cid so
     // multi-line raw dumps stay grouped under the connection they belong to.
     _printConnHeader(value) {
-        if (this.prevCid === value.cid) {
+        if (!showCid || this.prevCid === value.cid) {
             return;
         }
         this.prevCid = value.cid;
@@ -109,21 +114,22 @@ class Logger extends Writable {
             }
 
             const time = new Date(value.time || Date.now()).toISOString().slice(0, 19).replace('T', ' ');
+            const timePrefix = showTime ? `[${time}] ` : '';
 
             if (value.action === 'onPreHandler' && V1_PATH_RE.test(value.path)) {
-                console.log(`${GREY(`[${time}] H:`)} ${MAGENTA(`${value.method.toUpperCase()} ${sanitize(value.path)}${accountTag(value.account)}`)}`);
+                console.log(`${GREY(`${timePrefix}H:`)} ${MAGENTA(`${value.method.toUpperCase()} ${sanitize(value.path)}${accountTag(value.account)}`)}`);
             }
 
             if (value.component === 'api' && value.req && value.res && value.msg) {
                 console.log(
                     YELLOW(
-                        `[${time}] API${clc.bold(accountTag(value.account))}: ${value.req.method.toUpperCase()} ${sanitize(value.req.url)} ${value.res.statusCode} (${value.responseTime}ms)`
+                        `${timePrefix}API${clc.bold(accountTag(value.account))}: ${value.req.method.toUpperCase()} ${sanitize(value.req.url)} ${value.res.statusCode} (${value.responseTime}ms)`
                     )
                 );
             }
 
             if (value.action === 'renewAccessToken') {
-                const prefix = `[${time}] `;
+                const prefix = timePrefix;
                 const indent = ' '.repeat(prefix.length);
                 const color = value.error ? RED : YELLOW;
                 const pad = text => color(indent + padMultiline(text, indent));
@@ -157,7 +163,7 @@ class Logger extends Writable {
                 this._printConnHeader(value);
                 console.log(
                     GREY(
-                        `[${time}] Connection established to ${sanitize(value.host)}:${value.port} (${
+                        `${timePrefix}Connection established to ${sanitize(value.host)}:${value.port} (${
                             value.secure
                                 ? `${sanitize(value.version)} / ${sanitize(value.algo)}, ${value.authorized ? 'valid' : 'invalid'} certificate`
                                 : 'no tls'
@@ -170,7 +176,7 @@ class Logger extends Writable {
                 this._printConnHeader(value);
                 console.log(
                     GREY(
-                        `[${time}] TLS Session established using ${sanitize(value.version)} / ${sanitize(value.algo)}, ${
+                        `${timePrefix}TLS Session established using ${sanitize(value.version)} / ${sanitize(value.algo)}, ${
                             value.authorized ? 'valid' : 'invalid'
                         } certificate`
                     )
@@ -178,7 +184,7 @@ class Logger extends Writable {
             }
 
             if (value.src && value.data) {
-                const prefix = `[${time}] ${sanitize(value.src).toUpperCase().trim()}: [${value.secure ? 'S' : ' '}${value.compress ? 'C' : ' '}] `;
+                const prefix = `${timePrefix}${sanitize(value.src).toUpperCase().trim()}: [${value.secure ? 'S' : ' '}${value.compress ? 'C' : ' '}] `;
                 const indent = ' '.repeat(prefix.length);
                 const color = value.src === 's' ? SERVER : CLIENT;
                 this._printConnHeader(value);

@@ -54,7 +54,7 @@ Filter semantics in `_write`:
 
 ### Adding a new log shape
 
-Add another `if (chunk && chunk.value && ...)` block in `_write`. Follow the existing conventions: build a `[time] LABEL:` prefix, use `clc.xterm(<color>)` for coloring, and if the entry belongs to a connection, emit a `prevConn` header first so it groups correctly with surrounding raw traffic.
+Add another `if (chunk && chunk.value && ...)` block in `_write`. Follow the existing conventions: build a `${timePrefix}LABEL:` prefix (`timePrefix` is empty when the user passed `--no-time`), use `clc.xterm(<color>)` for coloring, and if the entry belongs to a connection, emit a `prevConn` header first so it groups correctly with surrounding raw traffic (`_printConnHeader` is a no-op under `--no-cid`).
 
 ## Releases
 

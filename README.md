@@ -35,6 +35,17 @@ $ EENGINE_LOG_RAW=true emailengine | eerawlog --filter.account="account1" --filt
 
 When filtering by `account`, API log entries are also matched by the account segment in their request URL, even if the entry itself has no `account` field.
 
+## Hiding prefixes
+
+For screenshots or documentation the timestamp and connection-id decorations can be turned off:
+
+- `--no-time` hides the `[YYYY-MM-DD HH:MM:SS]` prefix on every rendered line
+- `--no-cid` hides the bold connection-id header lines that group raw traffic by connection
+
+```
+$ EENGINE_LOG_RAW=true emailengine | eerawlog --no-time --no-cid
+```
+
 ## Example screenshot
 
 ![](https://cldup.com/0z5i7LU-_A.png)

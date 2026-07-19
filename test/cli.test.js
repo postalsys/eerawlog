@@ -218,6 +218,39 @@ test('neutralizes terminal escape sequences embedded in decoded raw socket data'
     assert.doesNotMatch(stdout, /\x1b\]52/);
 });
 
+test('--no-time hides timestamp prefixes', async () => {
+    const { stdout } = await runCli(
+        line({
+            time: FIXED_MS,
+            src: 'c',
+            cid: 'conn-nt',
+            secure: true,
+            data: Buffer.from('A1 LIST "" "*"\r\n').toString('base64')
+        }),
+        ['--no-time']
+    );
+    assert.doesNotMatch(stdout, /\[2024-01-15/);
+    assert.match(stdout, /^C: \[S ] A1 LIST "" "\*"/m);
+    // the connection header is unaffected
+    assert.match(stdout, /^conn-nt$/m);
+});
+
+test('--no-cid hides connection header lines', async () => {
+    const { stdout } = await runCli(
+        line({
+            time: FIXED_MS,
+            src: 'c',
+            cid: 'conn-nc',
+            secure: true,
+            data: Buffer.from('A1 NOOP\r\n').toString('base64')
+        }),
+        ['--no-cid']
+    );
+    assert.doesNotMatch(stdout, /^conn-nc$/m);
+    // the timestamped raw line is unaffected
+    assert.match(stdout, new RegExp(`\\[${FIXED_STR}\\] C: \\[S ] A1 NOOP`));
+});
+
 test('filter.account drops non-matching entries (AND-across-keys, OR-within-key)', async () => {
     const input =
         line({
