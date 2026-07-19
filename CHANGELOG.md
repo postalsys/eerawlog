@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.5](https://github.com/postalsys/eerawlog/compare/v1.5.4...v1.5.5) (2026-07-19)
+
+
+### Bug Fixes
+
+* add --no-time and --no-cid flags to hide line prefixes ([155d322](https://github.com/postalsys/eerawlog/commit/155d322ec892b42dc64a021072040af4f8d7be12))
+
 ## [1.5.4](https://github.com/postalsys/eerawlog/compare/v1.5.3...v1.5.4) (2026-07-06)
 
 
