@@ -35,12 +35,12 @@ process.stdin → split2(Parse) → Logger (Writable, objectMode) → process.st
 
 - `Parse(data)` is a per-line factory invoked by `split2`. It returns an object with either `{value: <parsedJSON>}` on success or `{err, input}` on failure (so malformed lines are still printed in yellow rather than crashing).
 - `Logger._write` is a chain of independent `if` blocks, one per recognized log shape. A single chunk may match multiple blocks (e.g. a connection event also containing TLS info). The recognized shapes are:
-  - `action === 'onPreHandler'` with `path` starting `/v1/` — Hapi route handler entry.
-  - `component === 'api'` with `req`/`res`/`msg` — API request completion line.
-  - `action === 'renewAccessToken'` — OAuth2 token renewal (red on error, yellow on success); also dumps `expires`, `scopes`, and `response.error` details.
-  - `src === 'connection'` with `host`+`port` — IMAP connection establishment.
-  - `src === 'tls'` with `algo`+`version` — TLS session info.
-  - `src` + `data` (base64) — raw socket bytes; `src === 's'` is server→client (xterm color 39), anything else is client→server (color 119). The `[SC]` prefix flags secure/compressed.
+    - `action === 'onPreHandler'` with `path` starting `/v1/` — Hapi route handler entry.
+    - `component === 'api'` with `req`/`res`/`msg` — API request completion line.
+    - `action === 'renewAccessToken'` — OAuth2 token renewal (red on error, yellow on success); also dumps `expires`, `scopes`, and `response.error` details.
+    - `src === 'connection'` with `host`+`port` — IMAP connection establishment.
+    - `src === 'tls'` with `algo`+`version` — TLS session info.
+    - `src` + `data` (base64) — raw socket bytes; `src === 's'` is server→client (xterm color 39), anything else is client→server (color 119). The `[SC]` prefix flags secure/compressed.
 - `this.prevConn` tracks the last printed `cid` (connection id). Whenever a new `cid` is seen, a bold connection header is emitted before the line, so multi-line raw dumps stay grouped under the connection they belong to.
 
 ### Filtering
@@ -48,6 +48,7 @@ process.stdin → split2(Parse) → Logger (Writable, objectMode) → process.st
 `minimist` parses `--filter.<key>=<value>` into `argv.filter`, which becomes the `filter` object. Repeating the same flag yields an array of values for that key.
 
 Filter semantics in `_write`:
+
 - All filter keys must match (AND across keys); within a key, any listed value matches (OR across values).
 - Numeric coercion is applied when the log field is a number; string coercion when it is a string.
 - Special case: filtering by `account` also matches API log entries whose `req.url` contains `/<account>/`, even when the entry has no `account` field. In that case `chunk.value.account` is back-filled from the filter so downstream output shows it. Keep this behavior in mind when adding new filterable keys — the rest of the matcher is generic, this branch is not.
