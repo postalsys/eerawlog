@@ -17,16 +17,22 @@ There is no build step. Source is plain CommonJS; `bin/eerawlog.js` is a one-lin
 - `npm run lint` / `npm run lint:fix` - ESLint 10 flat config in `eslint.config.js` (the shared Postal Systems baseline, eslint-config-prettier last). Keep it identical to the other repos except the "Repo-specific" block.
 - `npm run format` / `npm run format:check` - Prettier 3 with `.prettierrc.js` (4-space, single quotes, 160 col, no trailing commas, `arrowParens: 'avoid'`); `.prettierignore` skips the lockfile and `CHANGELOG.md`.
 - `npm run test:coverage` - the test suite under `c8`. The CLI tests spawn `bin/eerawlog.js` as subprocesses; c8 still covers `index.js` because `NODE_V8_COVERAGE` is inherited by the children.
-- CI (`.github/workflows/test.yaml`) runs `npm ci`, lint, format check and tests on Node 20, 22 and 24. `engines.node` is `>=20.0.0`.
-- `npm run update` - wipes `node_modules`/`package-lock.json`, runs `ncu -u`, reinstalls. See the dependency constraint below before accepting any bump.
+- `npm run test:cjs` - the suite with `require(esm)` disabled (see Platform constraints).
+- CI (`.github/workflows/test.yaml`) runs `npm ci`, lint, format check and tests on Node 20, 22 and 24, plus `npm run test:cjs` on Node 22 and 24. `engines.node` is `>=20.0.0`.
+- `npm run update` - wipes `node_modules`/`package-lock.json`, runs `ncu -u`, reinstalls. See Platform constraints below before accepting any bump.
 
-## Dependencies: CommonJS only
+## Platform constraints
 
-eerawlog sits in the EmailEngine dependency tree, which is loaded with `require()` and **cannot** use ESM. Every dependency - direct and transitive - must ship real CommonJS, not ESM and not a thin CommonJS wrapper around an ESM module. After `npm run update` or any dependency bump, verify this before committing:
+eerawlog sits in the EmailEngine dependency tree, and EmailEngine ships as a `@yao-pkg/pkg` binary that snapshots a CommonJS module graph and cannot load ES modules. Its DigitalOcean one-click images update EmailEngine but never the Node.js under it. Two rules follow:
 
-- No installed `package.json` may declare `"type": "module"` unless it also exposes a genuine CommonJS entry via an `exports` `require` condition. Quick scan (expect no matches): `grep -rl '"type": *"module"' node_modules/*/package.json node_modules/@*/*/package.json`.
-- Do **not** rely on "the tests still pass". Node 24 enables `require(esm)`, so an ESM-only dependency loads transparently at runtime and hides the problem - inspect the package metadata, not the runtime behavior.
-- If a dependency's new major has gone ESM-only, pin it to the last CommonJS release (via `.ncurc.js` or an explicit version in `package.json`) instead of upgrading.
+- **Node.js 20 is the minimum.** Code, tests and tooling must work on Node 20, 22 and 24 (`engines.node` is `>=20.0.0`).
+- **Everything that reaches runtime must be genuinely CommonJS-loadable.** The package and every dependency, direct and transitive, must ship real CommonJS: `require()` has to work with `--no-experimental-require-module`, and a CommonJS entry that only wraps a dynamic `import()` of ESM code does not count. Node 22+ (and 20.19) enable `require(esm)` by default, so an ESM-only dependency loads transparently in a plain `npm test` and hides the problem.
+
+How to check:
+
+- `npm run test:cjs` runs the suite with `NODE_OPTIONS=--no-experimental-require-module` (inherited by the spawned CLI processes), so an ESM-only dependency fails there. CI runs it on Node 22 and 24. Run it after `npm run update` or any dependency bump.
+- Also inspect the metadata: no runtime dependency's `package.json` may declare `"type": "module"` unless it also exposes a genuine CommonJS entry via an `exports` `require` condition. The devDependencies (eslint, prettier, c8) include ESM packages and never reach runtime, so scan only the production tree (expect no output): `for d in $(npm ls --omit=dev --all --parseable | tail -n +2); do grep -l '"type": *"module"' $d/package.json; done`.
+- Never add or upgrade to an ESM-only dependency. If a new major has gone ESM-only, pin the last CommonJS major in `.ncurc.js` (`reject` or `target`) with a comment giving the reason, instead of upgrading.
 
 ## Architecture
 
