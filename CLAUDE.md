@@ -12,35 +12,38 @@ There is no build step. Source is plain CommonJS; `bin/eerawlog.js` is a one-lin
 
 ## Commands
 
-- `npm test` — runs `test/cli.test.js` via `node --test`. These are **black-box CLI tests**: each case spawns `bin/eerawlog.js` as a subprocess, pipes NDJSON to its stdin, strips ANSI with `clc.strip`, and asserts on stdout. There are no unit tests of internal functions — behavior is pinned only through the CLI surface, so a change to rendering must be validated by feeding representative log lines.
+- `npm test` - runs `test/cli.test.js` via `node --test`. These are **black-box CLI tests**: each case spawns `bin/eerawlog.js` as a subprocess, pipes NDJSON to its stdin, strips ANSI with `clc.strip`, and asserts on stdout. There are no unit tests of internal functions - behavior is pinned only through the CLI surface, so a change to rendering must be validated by feeding representative log lines.
 - Run one test by name: `node --test --test-name-pattern="filter.account back-fill" test/cli.test.js`.
-- Lint/format config exists (`.eslintrc` extends `nodemailer` + `prettier`, `ecmaVersion` 2018; `.prettierrc.js`: 4-space, single quotes, 160 col, no trailing commas) but ESLint/Prettier are **not** in `devDependencies` and there is no lint/format npm script — run them via `npx` if you need to.
-- `npm run update` — wipes `node_modules`/`package-lock.json`, runs `ncu -u`, reinstalls. See the dependency constraint below before accepting any bump.
+- `npm run lint` / `npm run lint:fix` - ESLint 10 flat config in `eslint.config.js` (the shared Postal Systems baseline, eslint-config-prettier last). Keep it identical to the other repos except the "Repo-specific" block.
+- `npm run format` / `npm run format:check` - Prettier 3 with `.prettierrc.js` (4-space, single quotes, 160 col, no trailing commas, `arrowParens: 'avoid'`); `.prettierignore` skips the lockfile and `CHANGELOG.md`.
+- `npm run test:coverage` - the test suite under `c8`. The CLI tests spawn `bin/eerawlog.js` as subprocesses; c8 still covers `index.js` because `NODE_V8_COVERAGE` is inherited by the children.
+- CI (`.github/workflows/test.yaml`) runs `npm ci`, lint, format check and tests on Node 20, 22 and 24. `engines.node` is `>=20.0.0`.
+- `npm run update` - wipes `node_modules`/`package-lock.json`, runs `ncu -u`, reinstalls. See the dependency constraint below before accepting any bump.
 
 ## Dependencies: CommonJS only
 
-eerawlog sits in the EmailEngine dependency tree, which is loaded with `require()` and **cannot** use ESM. Every dependency — direct and transitive — must ship real CommonJS, not ESM and not a thin CommonJS wrapper around an ESM module. After `npm run update` or any dependency bump, verify this before committing:
+eerawlog sits in the EmailEngine dependency tree, which is loaded with `require()` and **cannot** use ESM. Every dependency - direct and transitive - must ship real CommonJS, not ESM and not a thin CommonJS wrapper around an ESM module. After `npm run update` or any dependency bump, verify this before committing:
 
 - No installed `package.json` may declare `"type": "module"` unless it also exposes a genuine CommonJS entry via an `exports` `require` condition. Quick scan (expect no matches): `grep -rl '"type": *"module"' node_modules/*/package.json node_modules/@*/*/package.json`.
-- Do **not** rely on "the tests still pass". Node 24 enables `require(esm)`, so an ESM-only dependency loads transparently at runtime and hides the problem — inspect the package metadata, not the runtime behavior.
+- Do **not** rely on "the tests still pass". Node 24 enables `require(esm)`, so an ESM-only dependency loads transparently at runtime and hides the problem - inspect the package metadata, not the runtime behavior.
 - If a dependency's new major has gone ESM-only, pin it to the last CommonJS release (via `.ncurc.js` or an explicit version in `package.json`) instead of upgrading.
 
 ## Architecture
 
-Almost everything lives in `index.js` (~180 lines). The pipeline is:
+Almost everything lives in `index.js` (~210 lines). The pipeline is:
 
 ```
-process.stdin → split2(Parse) → Logger (Writable, objectMode) → process.stdout
+process.stdin -> split2(Parse) -> Logger (Writable, objectMode) -> process.stdout
 ```
 
 - `Parse(data)` is a per-line factory invoked by `split2`. It returns an object with either `{value: <parsedJSON>}` on success or `{err, input}` on failure (so malformed lines are still printed in yellow rather than crashing).
 - `Logger._write` is a chain of independent `if` blocks, one per recognized log shape. A single chunk may match multiple blocks (e.g. a connection event also containing TLS info). The recognized shapes are:
-    - `action === 'onPreHandler'` with `path` starting `/v1/` — Hapi route handler entry.
-    - `component === 'api'` with `req`/`res`/`msg` — API request completion line.
-    - `action === 'renewAccessToken'` — OAuth2 token renewal (red on error, yellow on success); also dumps `expires`, `scopes`, and `response.error` details.
-    - `src === 'connection'` with `host`+`port` — IMAP connection establishment.
-    - `src === 'tls'` with `algo`+`version` — TLS session info.
-    - `src` + `data` (base64) — raw socket bytes; `src === 's'` is server→client (xterm color 39), anything else is client→server (color 119). The `[SC]` prefix flags secure/compressed.
+    - `action === 'onPreHandler'` with `path` starting `/v1/` - Hapi route handler entry.
+    - `component === 'api'` with `req`/`res`/`msg` - API request completion line.
+    - `action === 'renewAccessToken'` - OAuth2 token renewal (red on error, yellow on success); also dumps `expires`, `scopes`, and `response.error` details.
+    - `src === 'connection'` with `host`+`port` - IMAP connection establishment.
+    - `src === 'tls'` with `algo`+`version` - TLS session info.
+    - `src` + `data` (base64) - raw socket bytes; `src === 's'` is server->client (xterm color 39), anything else is client->server (color 119). The `[SC]` prefix flags secure/compressed.
 - `this.prevConn` tracks the last printed `cid` (connection id). Whenever a new `cid` is seen, a bold connection header is emitted before the line, so multi-line raw dumps stay grouped under the connection they belong to.
 
 ### Filtering
@@ -51,7 +54,7 @@ Filter semantics in `_write`:
 
 - All filter keys must match (AND across keys); within a key, any listed value matches (OR across values).
 - Numeric coercion is applied when the log field is a number; string coercion when it is a string.
-- Special case: filtering by `account` also matches API log entries whose `req.url` contains `/<account>/`, even when the entry has no `account` field. In that case `chunk.value.account` is back-filled from the filter so downstream output shows it. Keep this behavior in mind when adding new filterable keys — the rest of the matcher is generic, this branch is not.
+- Special case: filtering by `account` also matches API log entries whose `req.url` contains `/<account>/`, even when the entry has no `account` field. In that case `chunk.value.account` is back-filled from the filter so downstream output shows it. Keep this behavior in mind when adding new filterable keys - the rest of the matcher is generic, this branch is not.
 
 ### Adding a new log shape
 
@@ -59,4 +62,29 @@ Add another `if (chunk && chunk.value && ...)` block in `_write`. Follow the exi
 
 ## Releases
 
-Releases are automated with release-please (`.github/workflows/release.yaml`, `release-please-config.json`, `release-type: node`). Pushes to `master` with Conventional Commit messages drive the version bump and `CHANGELOG.md`: `fix:`/`feat:` open a release PR, while `chore:`/docs/CI commits do not trigger a release. Merging the release PR publishes to npm with provenance from the `npm-publish` GitHub environment — so commit messages are load-bearing, not cosmetic.
+Releases are automated with release-please (`.github/workflows/release.yaml`, `release-please-config.json`, `release-type: node`). Pushes to `master` with Conventional Commit messages drive the version bump and `CHANGELOG.md`: `fix:`/`feat:` open a release PR, while `chore:`/docs/CI commits do not trigger a release. Merging the release PR publishes to npm with provenance from the `npm-publish` GitHub environment - so commit messages are load-bearing, not cosmetic.
+
+## Conventions
+
+These mirror the conventions used across Postal Systems projects (see `../emailengine`).
+
+**Git commits**
+
+- Use Conventional Commits: `fix:` (patch release), `feat:` (minor release), and `chore:`/`docs:`/`ci:`/`build:`/`style:`/`refactor:`/`test:` for changes that should not trigger a release. release-please derives the version and changelog from these prefixes.
+- Do **not** list Claude or any AI assistant as a co-author / co-contributor in commit messages or PR descriptions (no `Co-Authored-By` trailer).
+- Append `[skip ci]` to commits that do not change runtime behavior (docs, comments, formatting) to avoid spending CI minutes. Exception: never add `[skip ci]` to a `fix:` or `feat:` commit, those must run so the release workflow triggers. GitHub reads the marker off the HEAD commit of a push, so when a push mixes the two, the release-triggering commit has to be last.
+
+**Code & docs style**
+
+- No emojis anywhere in code or documentation, printable ASCII only.
+- Use a single hyphen-minus (`-`) as a dash in user-facing strings and docs. Never use double hyphens (`--`), em dashes, or en dashes.
+
+**Before committing code changes**
+
+1. `npm run format` and `npm run lint`
+2. `npm test`
+3. For non-trivial changes, consider `/simplify` (quality cleanup) and `/security-review`. This tool prints untrusted log data to a terminal, so anything touching `sanitize()` / `CONTROL_RE` is security-sensitive.
+
+**After pushing**
+
+- Check the workflow runs for the push (`gh run list --branch master`) and report their status. If a run fails for an unrelated/infrastructure reason (checkout reporting "account suspended", HTTP 403, other auth errors), check <https://www.githubstatus.com/> for an active GitHub incident before assuming the change caused it.
