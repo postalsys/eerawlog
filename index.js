@@ -26,6 +26,7 @@ const TRAILING_LF_RE = /\n$/;
 const LF_RE = /\n/g;
 // C0 controls (except tab and LF), DEL, and C1 controls — the bytes that carry
 // terminal escape/OSC sequences. CR is included so it can't reposition the cursor.
+// eslint-disable-next-line no-control-regex -- matching control bytes is the point
 const CONTROL_RE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
 
 const GREY = clc.xterm(8);
@@ -193,6 +194,7 @@ class Logger extends Writable {
         } catch (err) {
             console.error(err);
         } finally {
+            // eslint-disable-next-line callback-return -- always signal completion, even after an error
             callback();
         }
     }
@@ -204,6 +206,6 @@ class Logger extends Writable {
 }
 
 pump(process.stdin, split(Parse), new Logger());
-process.on('SIGINT', function () {
+process.on('SIGINT', () => {
     process.exit(0);
 });

@@ -215,6 +215,7 @@ test('neutralizes terminal escape sequences embedded in decoded raw socket data'
     );
     // Control bytes are rendered as inert caret notation (ESC -> ^[, BEL -> ^G), not emitted raw.
     assert.match(stdout, /A1 OK\^\[\]52;c;ZXZpbA\^G done/);
+    // eslint-disable-next-line no-control-regex -- asserts the raw ESC byte is absent
     assert.doesNotMatch(stdout, /\x1b\]52/);
 });
 
